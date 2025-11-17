@@ -1,0 +1,22 @@
+# C++ 编译产生的中间文件
+*.o
+*.obj
+*.d
+
+# 可执行文件 (假设你的程序叫 server)
+server
+a.out
+*.exe
+
+# 编辑器配置 (不要上传你的 VSCode/CLion 个人配置)
+.vscode/
+.idea/
+*.swp
+
+# 系统垃圾文件
+.DS_Store
+Thumbs.db
+
+# 日志文件 (实际运行时生成的，不需要上传)
+log/
+ServerLog
