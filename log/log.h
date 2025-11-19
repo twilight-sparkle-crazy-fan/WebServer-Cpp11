@@ -17,7 +17,7 @@ class Log {
 
     bool init(const std::string file_name, int close_log, int log_buf_size = 8192, int split_lines = 5000000, int max_queue_size = 0);
 
-    void write_log(int level, const std::string& format, ...);
+    void write_log(int level, const char* format, ...);
 
     void flush(void);
 
@@ -38,7 +38,7 @@ class Log {
     std::string log_name;
     int m_split_lines;
     int m_log_buf_size;
-    long long m_count;
+    long long m_line_count;
     int m_today;
     FILE *m_fp;
     std::unique_ptr<char[]> m_buf;

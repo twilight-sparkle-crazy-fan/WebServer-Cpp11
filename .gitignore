@@ -3,6 +3,7 @@
 *.obj
 *.d
 *.txt
+*.gch
 
 # 可执行文件 (假设你的程序叫 server)
 server
@@ -21,3 +22,4 @@ Thumbs.db
 # 日志文件 (实际运行时生成的，不需要上传)
 log/server_log
 ServerLog
+log/log.h

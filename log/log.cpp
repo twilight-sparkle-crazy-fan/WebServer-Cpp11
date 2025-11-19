@@ -23,7 +23,7 @@ void Log::flush(){
     //强制刷新写入流缓冲区
 }
 
-bool Log::init(const std::string file_name, int close_log, int log_buf_size = 8192, int split_lines = 5000000, int max_queue_size = 0){
+bool Log::init(const std::string file_name, int close_log, int log_buf_size, int split_lines, int max_queue_size){
     if(max_queue_size > 0){
         m_is_async = true;
         m_log_queue.reset(new block_queue<std::string>(max_queue_size));
@@ -47,11 +47,18 @@ bool Log::init(const std::string file_name, int close_log, int log_buf_size = 81
     if (last_slash_pos == std::string::npos){
         snprintf(log_full_name, 255, "%d_%02d_%02d_%s", my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, file_name.c_str());
 
+        log_name = file_name;
+        dir_name = "";
+
     }
     else{
         std::string log_name_str = file_name.substr(last_slash_pos + 1);
         std::string dir_name_str = file_name.substr(0, last_slash_pos + 1);
-        snprintf(log_full_name, 255, "%s%d_%02d_%02d_%s", dir_name.c_str(), my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, log_name_str.c_str());
+
+        log_name = log_name_str; 
+        dir_name = dir_name_str;
+
+        snprintf(log_full_name, 255, "%s%d_%02d_%02d_%s", dir_name_str.c_str(), my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, log_name_str.c_str());
     }
 
     m_today = my_tm.tm_mday;
@@ -64,11 +71,11 @@ bool Log::init(const std::string file_name, int close_log, int log_buf_size = 81
     return true;
  }
 
- void Log::write_log(int level, const std::string& format, ...){
+ void Log::write_log(int level, const char* format, ...){
     auto now = std::chrono::system_clock::now();
     auto now_time_t = std::chrono::system_clock::to_time_t(now);
-    struct tm *sys_tm = localtime(&now_time_t);
-    struct tm my_tm = *sys_tm;
+    struct tm my_tm;
+    localtime_r(&now_time_t, &my_tm);
     auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()) % 1000000;
     long microsecond = now_us.count();
 
@@ -109,6 +116,7 @@ bool Log::init(const std::string file_name, int close_log, int log_buf_size = 81
             new_log_name = dir_name + tail + log_name + "." + std::to_string(m_line_count / m_split_lines);
         }
         m_fp = fopen(new_log_name.c_str(), "a");
+    }
 
         
         va_list valist;
@@ -117,11 +125,13 @@ bool Log::init(const std::string file_name, int close_log, int log_buf_size = 81
 
         int n = snprintf(m_buf.get(),48, "%d-%02d-%02d %02d:%02d:%02d.%06ld %s ",
                      my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday,
-                     my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, now_us, s);
+                     my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, microsecond, s.c_str());
         
-        int m = vsnprintf(m_buf.get() + n, m_log_buf_size - n, format.c_str(), valist);
-        m_buf[n + m] = '\n';
-        m_buf[n + m + 1] = '\0';
+        int m = vsnprintf(m_buf.get() + n, m_log_buf_size - n - 1, format, valist);
+        va_end(valist);
+
+        m_buf.get()[n + m] = '\n';
+        m_buf.get()[n + m + 1] = '\0';
         log_str = m_buf.get();
         lock.unlock();
         if (m_is_async && !m_log_queue->full()){
@@ -130,15 +140,7 @@ bool Log::init(const std::string file_name, int close_log, int log_buf_size = 81
         else{
             lock.lock();
             fputs(log_str.c_str(), m_fp);
-        }
-
-        va_end(valist);
-
-    }
-
-
-
-
+        }   
 
 
  }
