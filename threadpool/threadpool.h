@@ -36,7 +36,7 @@ private:
 
 template <typename T>
 threadpool<T>::threadpool(int actor_model, sql_connection_pool *conn_pool, int thread_number, int max_requests)
-:m_actor_model(actor_model), m_thread_number(thread_number), m_max_requests(max_requests), m_threads(thread_number), m_conn_pool(conn_pool)
+:m_actor_model(actor_model), m_thread_number(thread_number), m_max_requests(max_requests), m_threads(thread_number), m_connPool(conn_pool)
 {
 
     if (thread_number <= 0 || max_requests <= 0)
@@ -82,6 +82,7 @@ template <typename T>
 void threadpool<T>::worker(){
     run();
 }
+//这个没什么用
 
 template <typename T>
 void threadpool<T>::run(){
