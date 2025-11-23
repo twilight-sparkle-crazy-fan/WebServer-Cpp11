@@ -6,7 +6,8 @@
 #include <queue>             
 #include <chrono>
 #include <assert.h>
-#include <stdexcept>  
+#include <stdexcept>
+#include <utility>  
 
 template<typename T>
 class block_queue {
@@ -38,10 +39,21 @@ class block_queue {
         return true;
     }
 
+    bool push(T&& data){
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if(m_queue.size() >= m_max_size){
+            m_cond.notify_all();
+            return false;
+        }
+        m_queue.push(std::move(data));
+        m_cond.notify_one();
+        return true;
+     }
+
     bool pop(T& data){
         std::unique_lock<std::mutex> lock(m_mutex);
         m_cond.wait(lock,[this]{return !m_queue.empty();});
-        data = m_queue.front();
+        data = std::move(m_queue.front());
         m_queue.pop();
         return true;
     }
@@ -50,7 +62,7 @@ class block_queue {
         std::unique_lock<std::mutex> lock(m_mutex);
         if(m_cond.wait_for(lock,std::chrono::milliseconds(ms_timeout),[this]{return !m_queue.empty();}))
         {
-        data = m_queue.front();
+        data = std::move(m_queue.front());
         m_queue.pop();
         return true;
         }
