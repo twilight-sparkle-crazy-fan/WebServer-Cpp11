@@ -58,6 +58,8 @@ class block_queue {
         return true;
     }
 
+    //m_cond.wait() 两个参数，第一个是锁，第二个是条件变量，当条件变量为真时，m_cond.wait()会返回，否则会阻塞。
+
     bool pop(T& data, int ms_timeout){
         std::unique_lock<std::mutex> lock(m_mutex);
         if(m_cond.wait_for(lock,std::chrono::milliseconds(ms_timeout),[this]{return !m_queue.empty();}))
