@@ -11,6 +11,9 @@
 #include <sys/epoll.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <sys/types.h>
 #include "../CGImysql/sql_connection_pool.h"
 
 class httpConn
@@ -88,12 +91,15 @@ private:
     HTTP_CODE process_read();
     HTTP_CODE do_request();
     HTTP_CODE parse_request_line();
-    httpConn::LINE_STATUS httpConn::parse_line();  //解析一行
+    httpConn::LINE_STATUS httpConn::parse_line(); // 解析一行
     bool read_once();
-    HTTP_CODE parse_request_line(char *text);  //解析请求行
-    HTTP_CODE parse_headers(char *text);  //解析请求头
-    HTTP_CODE parse_content(char *text);  //判断是否被完整读入
-    HTTP_CODE process_read(); 
+    HTTP_CODE parse_request_line(char *text); // 解析请求行
+    HTTP_CODE parse_headers(char *text);      // 解析请求头
+    HTTP_CODE parse_content(char *text);      // 判断是否被完整读入
+    HTTP_CODE process_read();                 // 主状态机的处理函数
+    HTTP_CODE do_request();
+
+    char *get_line() { return m_readBuf + m_writeIdx; }
 
 public:
     static std::atomic_int m_epollfd;
@@ -108,7 +114,7 @@ private:
     static std::mutex m_lock;
     static std::map<std::string, std::string> m_user;
 
-    std::string docRoot; // 网页根目录
+    std ::string docRoot; // 网页根目录
 
     int m_trigMode;
     int m_closeLog;
@@ -126,18 +132,20 @@ private:
     char m_realFile[FILENAME_SIZE];
     CHECK_STATE m_checkState;
     METHOD m_method;
-    bool m_linger;   // 是否保持连接 默认是关的
-    char* m_url;
-    char* m_version;
-    char* m_host;
+    bool m_linger; // 是否保持连接 默认是关的
+    char *m_url;
+    char *m_version;
+    char *m_host;
     long m_contentLength;
-    
-    int m_startLine;
-    int m_checkedIdx;
-    int m_readIdx; //读缓冲区上限
+
+    int m_startLine;  // 正在解析的那一行的起始位置
+    int m_checkedIdx; // 负责找到下一行的起始位置
+    int m_readIdx;    // 读缓冲区上限
     int m_writeIdx;
-    int cgi;  // 是否启用的POST
-    char * m_requestHeadData;   //请求头数据
+    int cgi;                 // 是否启用的POST
+    char *m_requestHeadData; // 请求头数据
 
-
+    char *m_fileAddress;
+    struct stat m_fileStat; // 文件信息缓存
+    struct iovec m_iv[2];   // 系统调用 writev 的专属参数
 };

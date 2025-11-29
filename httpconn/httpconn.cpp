@@ -320,17 +320,218 @@ httpConn::HTTP_CODE httpConn::parse_headers(char *text)
     return NO_REQUEST;
 }
 
-httpConn::HTTP_CODE httpConn::parse_content(char *text){
-    if (m_readIdx >= (m_contentLength + m_checkedIdx)){
+httpConn::HTTP_CODE httpConn::parse_content(char *text)
+{
+    if (m_readIdx >= (m_contentLength + m_checkedIdx))
+    {
         text[m_contentLength] = '\0';
         m_requestHeadData = text;
         return GET_REQUEST;
-        //这个\0 有存在破坏下一个请求的可能
+        // 这个\0 有存在破坏下一个请求的可能
     }
     return NO_REQUEST;
 }
 
-//主状态机
-httpConn::HTTP_CODE httpConn::process_read(){
+// 主状态机
+httpConn::HTTP_CODE httpConn::process_read()
+{
+    LINE_STATUS lineStatus = LINE_OK;
+    HTTP_CODE ret = NO_REQUEST;
+    char *text = nullptr;
+
+    while ((m_checkState == CHECK_STATE_CONTENT && lineStatus == LINE_OK) || (lineStatus = parse_line()) == LINE_OK)
+    {
+        text = get_line();
+        m_startLine = m_checkedIdx;
+        // LOG_INFO("got 1 http line: %s", text);
+        switch (m_checkedIdx)
+        {
+        case CHECK_STATE_REQUESTLINE:
+        {
+            ret = parse_request_line(text);
+            if (ret == BAD_REQUEST)
+            {
+                return BAD_REQUEST;
+            }
+            break;
+        }
+        case CHECK_STATE_HEADER:
+        {
+            ret = parse_headers(text);
+            if (ret == BAD_REQUEST)
+            {
+                return BAD_REQUEST;
+            }
+            else if (ret == GET_REQUEST)
+            {
+                return do_request();
+            }
+            break;
+        }
+        case CHECK_STATE_CONTENT:
+        {
+            ret = parse_content(text);
+            if (ret == GET_REQUEST)
+            {
+                return do_request();
+            }
+            lineStatus = LINE_OPEN;
+            break;
+        }
+        default:
+        {
+            return INTERNAL_ERROR;
+        }
+        }
+        return NO_REQUEST;
+    }
+}
+
+httpConn::HTTP_CODE httpConn::do_request()
+{
+    strcpy(m_realFile, docRoot.c_str());
+    int len = strlen(docRoot.c_str());
+    const char *p = strrchr(m_url, '/');
+    // 查找最后一次的/
+
+    // 处理cgi
+    if (cgi == 1 && (*(p + 1) == '2' || *(p + 1) == '3'))
+    {
+        char flag = m_url[1];
+    }
+
+    char m_url_real[200];
+    strcpy(m_url_real, "/");
+    strcat(m_url_real, m_url + 2);
+    strncpy(m_realFile + len, m_url_real, FILENAME_SIZE - len - 1);
+
+    std::string name;
+    std::string password;
+    // user=123&passwd=123
+
+    std::string requestHeadData = m_requestHeadData; // 假设这是 user=zhangsan&passwd=123
+
+    // 1. 找 user
+    size_t posUser = requestHeadData.find("user=");
+
+    // 2. 找 passwd
+    size_t posPassword = requestHeadData.find("passwd=");
+
+    if (posUser != std::string::npos && posPassword != std::string::npos)
+    {
+        size_t endUser = requestHeadData.find('&', posUser);
+        if (endUser == std::string::npos)
+        {
+            name = requestHeadData.substr(posUser + 5);
+        }
+        else
+        {
+            name = requestHeadData.substr(posUser + 5, endUser - (posUser + 5));
+        }
+        size_t endPassword = requestHeadData.find('&', posPassword);
+        if (endPassword == std::string::npos)
+        {
+            password = requestHeadData.substr(posPassword + 7);
+        }
+        else
+        {
+            password = requestHeadData.substr(posPassword + 7, endPassword - (posPassword + 7));
+        }
+    }
+
+    if (*(p + 1) == '3')
+    {
+        std::string sql = "SELECT * FROM user WHERE username='" + name + "' AND password='" + password + "'";
+
+        if (m_user.find(name) != m_user.end())
+        {
+            m_lock.lock();
+            int res = mysql_query(mysql, sql.c_str());
+            m_user.insert(std::make_pair(name, password));
+            m_lock.unlock();
+
+            if (!res)
+            {
+                strcpy(m_url, "/log.html");
+            }
+            else
+            {
+                strcpy(m_url, "/registerError.html");
+            }
+        }
+        else
+        {
+            strcpy(m_url, "/registerError.html");
+        }
+    }
+    else if (*(p + 1) == '2')
+    {
+        if (m_user.find(name) != m_user.end() && m_user[name] == password)
+        {
+            strcpy(m_url, "/welcome.html");
+        }
+        else
+        {
+            strcpy(m_url, "/logError.html");
+        }
+    }
+
+    int len = docRoot.size();
+    const char *target_file = nullptr;
+    char action = *(p + 1);
+    switch (action)
+    {
+    case '0':
+        target_file = "/register.html";
+        break;
+    case '1':
+        target_file = "/log.html";
+        break;
+    case '5':
+        target_file = "/picture.html";
+        break;
+    case '6':
+        target_file = "/video.html";
+        break;
+    case '7':
+        target_file = "/fans.html";
+        break;
+    default:
+        target_file = m_url;
+        break;
+    }
+
+    strcpy(m_realFile, docRoot.c_str());
+    strncat(m_realFile, target_file, FILENAME_SIZE - len - 1);
+
+    if (stat(m_realFile, &m_fileStat) < 0)
+        return NO_RESOURCE;
+
+    //调用系统函数 stat，把文件的所有信息读到 m_file_stat 结构体里
+
+    if (!(m_fileStat.st_mode & S_IROTH))
+        return FORBIDDEN_REQUEST;
+    // 如果没有读权限，返回 FORBIDDEN_REQUEST
+
+    if (S_ISDIR(m_fileStat.st_mode))
+        return BAD_REQUEST;
+    // 如果是目录，返回 BAD_REQUEST
+
+    int fd = open(m_realFile, O_RDONLY);
+    m_fileAddress = (char *)mmap(0, m_fileStat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    // 调用系统函数 mmap，将目标文件映射到内存中
+    close(fd);
+    return FILE_REQUEST;
+}
+
+void httpConn::unmap() {
+    if (m_fileAddress){
+        munmap(m_fileAddress, m_fileStat.st_size);
+        m_fileAddress = nullptr;
+    }
+}
+// 解除映射
+
+bool httpConn::write(){
     
 }
