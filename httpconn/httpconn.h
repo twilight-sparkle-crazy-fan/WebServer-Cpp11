@@ -88,6 +88,12 @@ private:
     HTTP_CODE process_read();
     HTTP_CODE do_request();
     HTTP_CODE parse_request_line();
+    httpConn::LINE_STATUS httpConn::parse_line();  //解析一行
+    bool read_once();
+    HTTP_CODE parse_request_line(char *text);  //解析请求行
+    HTTP_CODE parse_headers(char *text);  //解析请求头
+    HTTP_CODE parse_content(char *text);  //判断是否被完整读入
+    HTTP_CODE process_read(); 
 
 public:
     static std::atomic_int m_epollfd;
@@ -117,20 +123,21 @@ private:
 private:
     char m_readBuf[READ_BUFFER_SIZE];
     char m_writeBuf[WRITE_BUFFER_SIZE];
-    char m_realFile[FILE_NAME];
+    char m_realFile[FILENAME_SIZE];
     CHECK_STATE m_checkState;
     METHOD m_method;
     bool m_linger;   // 是否保持连接 默认是关的
-    std::string m_url;
-    std::string m_version;
-    std::string m_host;
+    char* m_url;
+    char* m_version;
+    char* m_host;
     long m_contentLength;
     
     int m_startLine;
     int m_checkedIdx;
-    int m_readIdx;
+    int m_readIdx; //读缓冲区上限
     int m_writeIdx;
     int cgi;  // 是否启用的POST
+    char * m_requestHeadData;   //请求头数据
 
 
 };
