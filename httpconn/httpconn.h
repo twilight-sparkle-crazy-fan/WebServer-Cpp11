@@ -14,6 +14,8 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <sys/uio.h>
+#include "../log/log.h"
 #include "../CGImysql/sql_connection_pool.h"
 
 class httpConn
@@ -74,7 +76,7 @@ public:
     void init(int sockfd, const sockaddr_in &addr, std::string root, int trigMode, int closeLog, std::string username, std::string password, std::string sqlname);
     void closeConn(bool real_close = true);
     void process();
-    bool read();
+    bool read_once();
     bool write();
     sockaddr_in *get_address()
     {
@@ -88,18 +90,29 @@ public:
 private:
     void init();
     bool process_write(HTTP_CODE ret);
-    HTTP_CODE process_read();
-    HTTP_CODE do_request();
-    HTTP_CODE parse_request_line();
-    httpConn::LINE_STATUS httpConn::parse_line(); // 解析一行
-    bool read_once();
-    HTTP_CODE parse_request_line(char *text); // 解析请求行
-    HTTP_CODE parse_headers(char *text);      // 解析请求头
-    HTTP_CODE parse_content(char *text);      // 判断是否被完整读入
     HTTP_CODE process_read();                 // 主状态机的处理函数
     HTTP_CODE do_request();
 
-    char *get_line() { return m_readBuf + m_writeIdx; }
+    httpConn::LINE_STATUS parse_line(); // 解析一行
+
+    HTTP_CODE parse_request_line(char *text); // 解析请求行
+    HTTP_CODE parse_headers(char *text);      // 解析请求头
+    HTTP_CODE parse_content(char *text);      // 判断是否被完整读入
+
+
+    char *get_line() { return m_readBuf + m_startLine; }
+
+    void unmap();
+
+    bool add_response(const char *format, ...);
+    bool add_content(const char *content);
+    bool add_status_line(int status, const char *title);
+    bool add_headers(int content_length);
+    bool add_content_type();
+    bool add_content_length(int content_length);
+    bool add_linger();
+    bool add_blank_line();
+    
 
 public:
     static std::atomic_int m_epollfd;
@@ -148,4 +161,5 @@ private:
     char *m_fileAddress;
     struct stat m_fileStat; // 文件信息缓存
     struct iovec m_iv[2];   // 系统调用 writev 的专属参数
+    int m_ivCount;
 };
