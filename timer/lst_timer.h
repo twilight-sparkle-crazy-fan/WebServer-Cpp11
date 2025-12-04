@@ -9,14 +9,16 @@
 #include <sys/epoll.h> 
 #include <fcntl.h>     
 #include <unistd.h>
-#include <time.h>    
+#include <time.h>
+#include <memory>    
 
 class util_timer;
 
 struct client_data {
     sockaddr_in address;
     int sockfd;
-    util_timer *timer;
+    //util_timer *timer;
+    std::unique_ptr<util_timer> timer;
 };
 
 class util_timer {
