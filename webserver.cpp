@@ -19,6 +19,8 @@ webserver::webserver()
 
 webserver::~webserver()
 {
+    m_threadpool.reset();
+    m_timer.reset();
 
     close(m_epollfd);
     close(m_listenfd);
@@ -75,11 +77,11 @@ void webserver::log_write_init()
     {
         if (1 == m_logWriteType)
         {
-            Log::get_instance().init("./ServerLog", m_closeLog, 2000, 800000,800);
+            Log::get_instance().init("./ServerLog", m_closeLog, 2000, 800000, 800);
         }
         else
         {
-            Log::get_instance().init("./ServerLog", m_closeLog, 2000, 800000,0);
+            Log::get_instance().init("./ServerLog", m_closeLog, 2000, 800000, 0);
         }
     }
 }
@@ -178,7 +180,7 @@ void webserver::timer(int connfd, struct sockaddr_in client_address)
 
     timer->user_data = &m_timer[connfd];
     timer->cb_func = [this, connfd]()
-    { this->users[connfd].closeConn(); }; // 超时后的处理：关闭连接
+    { if (this -> users)this->users[connfd].closeConn(); }; // 超时后的处理：关闭连接
     time_t cur = ::time(nullptr);
     timer->expire = cur + 3 * TIMESLOT;
     utils.m_time_lst.add_timer(timer.get());
@@ -197,11 +199,17 @@ void webserver::adjust_timer(util_timer *timer)
 
 void webserver::deal_timer(util_timer *timer, int sockfd)
 {
-    timer->cb_func();
+    if (timer && timer->cb_func)
+    {
+        timer->cb_func();
+    }
     if (timer)
     {
         utils.m_time_lst.del_timer(timer);
-        //m_timer[sockfd].timer.reset();
+    }
+    if (m_timer[sockfd].timer)
+    {
+        m_timer[sockfd].timer.reset();
     }
     // LOG
 }
@@ -313,7 +321,6 @@ void webserver::dealwithread(int sockfd)
                     deal_timer(timer, sockfd);
                     users[sockfd].timer_flag = 0;
                     // 读取失败的逻辑
-                    
                 }
                 users[sockfd].m_processing_finished = false;
                 break;

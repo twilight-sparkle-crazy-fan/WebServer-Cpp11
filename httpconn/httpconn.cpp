@@ -21,6 +21,9 @@ void httpConn::initmysql_result(sql_connection_pool *connPool)
     MYSQL *mysqlconn = nullptr;
     connectionRAII mysql(&mysqlconn, connPool);
 
+    if (mysqlconn == nullptr)
+        return;
+
     if (mysql_query(mysqlconn, "SELECT username,passwd FROM user"))
     {
         if (0 == m_closeLog)
@@ -134,6 +137,7 @@ void httpConn::init()
     m_version = nullptr;
     m_host = nullptr;
     m_contentLength = 0;
+    m_requestHeadData = nullptr;
 
     m_startLine = 0;
     m_checkedIdx = 0;
@@ -270,7 +274,7 @@ httpConn::HTTP_CODE httpConn::parse_request_line(char *text)
         return BAD_REQUEST;
     }
     if (strlen(m_url) == 1)
-        strcat(m_url, "index.html");
+        strcat(m_url, "judge.html");
     // strcat 连接字符串
     m_checkState = CHECK_STATE_HEADER;
     return NO_REQUEST;
@@ -357,7 +361,7 @@ httpConn::HTTP_CODE httpConn::process_read()
             Log::get_instance().write_log(1, "got 1 http line: %s", text);
             Log::get_instance().flush();
         }
-        switch (m_checkedIdx)
+        switch (m_checkState)
         {
         case CHECK_STATE_REQUESTLINE:
         {
@@ -402,137 +406,135 @@ httpConn::HTTP_CODE httpConn::process_read()
 
 httpConn::HTTP_CODE httpConn::do_request()
 {
-    strcpy(m_realFile, docRoot.c_str());
+strcpy(m_realFile, docRoot.c_str());
     int len = strlen(docRoot.c_str());
     const char *p = strrchr(m_url, '/');
-    // 查找最后一次的/
 
-    // 处理cgi
+ 
+
+    if (m_url == nullptr || p == nullptr) return BAD_REQUEST;
+
     if (cgi == 1 && (*(p + 1) == '2' || *(p + 1) == '3'))
     {
-        char flag = m_url[1];
-    }
+        std::string name;
+        std::string password;
+        std::string requestHeadData = "";
+        
+        if (m_requestHeadData != nullptr) 
+            requestHeadData = m_requestHeadData;
 
-    char m_url_real[200];
-    strcpy(m_url_real, "/");
-    strcat(m_url_real, m_url + 2);
-    strncpy(m_realFile + len, m_url_real, FILENAME_SIZE - len - 1);
+  
 
-    std::string name;
-    std::string password;
-    // user=123&passwd=123
+        size_t posUser = requestHeadData.find("user=");
+        size_t posPassword = requestHeadData.find("passwd=");
 
-    std::string requestHeadData = m_requestHeadData; // 假设这是 user=zhangsan&passwd=123
-
-    // 1. 找 user
-    size_t posUser = requestHeadData.find("user=");
-
-    // 2. 找 passwd
-    size_t posPassword = requestHeadData.find("passwd=");
-
-    if (posUser != std::string::npos && posPassword != std::string::npos)
-    {
-        size_t endUser = requestHeadData.find('&', posUser);
-        if (endUser == std::string::npos)
+        if (posUser != std::string::npos && posPassword != std::string::npos)
         {
-            name = requestHeadData.substr(posUser + 5);
-        }
-        else
-        {
-            name = requestHeadData.substr(posUser + 5, endUser - (posUser + 5));
-        }
-        size_t endPassword = requestHeadData.find('&', posPassword);
-        if (endPassword == std::string::npos)
-        {
-            password = requestHeadData.substr(posPassword + 7);
-        }
-        else
-        {
-            password = requestHeadData.substr(posPassword + 7, endPassword - (posPassword + 7));
-        }
-    }
-
-    if (*(p + 1) == '3')
-    {
-        std::string sql = "SELECT * FROM user WHERE username='" + name + "' AND password='" + password + "'";
-
-        if (m_user.find(name) != m_user.end())
-        {
-            m_lock.lock();
-            int res = mysql_query(mysql, sql.c_str());
-            m_user.insert(std::make_pair(name, password));
-            m_lock.unlock();
-
-            if (!res)
-            {
-                strcpy(m_url, "/log.html");
-            }
+            size_t endUser = requestHeadData.find('&', posUser);
+            if (endUser == std::string::npos)
+                name = requestHeadData.substr(posUser + 5);
             else
-            {
-                strcpy(m_url, "/registerError.html");
-            }
+                name = requestHeadData.substr(posUser + 5, endUser - (posUser + 5));
+
+            size_t endPassword = requestHeadData.find('&', posPassword);
+            if (endPassword == std::string::npos)
+                password = requestHeadData.substr(posPassword + 7);
+            else
+                password = requestHeadData.substr(posPassword + 7, endPassword - (posPassword + 7));
         }
-        else
+
+        if (mysql == nullptr) 
         {
-            strcpy(m_url, "/registerError.html");
-        }
-    }
-    else if (*(p + 1) == '2')
-    {
-        if (m_user.find(name) != m_user.end() && m_user[name] == password)
-        {
-            strcpy(m_url, "/welcome.html");
-        }
-        else
-        {
+            
             strcpy(m_url, "/logError.html");
         }
+        else 
+        {
+            if (*(p + 1) == '3') // 注册
+            {
+                std::string sql = "INSERT INTO user(username, passwd) VALUES('" + name + "', '" + password + "')";
+                
+   
+
+                m_lock.lock();
+                // 检查用户是否已存在
+                if (m_user.find(name) == m_user.end())
+                {
+                    int res = mysql_query(mysql, sql.c_str());
+                    
+                
+
+                    if (res == 0)
+                    {
+                        m_user.insert(std::make_pair(name, password));
+                        strcpy(m_url, "/log.html");
+                       
+                    }
+                    else
+                    {
+                        strcpy(m_url, "/registerError.html");
+                      
+                    }
+                }
+                else
+                {
+                    strcpy(m_url, "/registerError.html");
+                    
+                }
+                m_lock.unlock();
+            }
+            else if (*(p + 1) == '2') // 登录
+            {
+                m_lock.lock();
+                if (m_user.find(name) != m_user.end() && m_user[name] == password)
+                {
+                    strcpy(m_url, "/welcome.html");
+                   
+                }
+                else
+                {
+                    strcpy(m_url, "/logError.html");
+                  
+                }
+                m_lock.unlock();
+            }
+        }
     }
-    len = docRoot.size();
+
+    // 3. 路由映射
     const char *target_file = nullptr;
     char action = *(p + 1);
     switch (action)
     {
-    case '0':
-        target_file = "/register.html";
-        break;
-    case '1':
-        target_file = "/log.html";
-        break;
-    case '5':
-        target_file = "/picture.html";
-        break;
-    case '6':
-        target_file = "/video.html";
-        break;
-    case '7':
-        target_file = "/fans.html";
-        break;
-    default:
-        target_file = m_url;
-        break;
+    case '0': target_file = "/register.html"; break;
+    case '1': target_file = "/log.html"; break;
+    case '5': target_file = "/picture.html"; break;
+    case '6': target_file = "/video.html"; break;
+    case '7': target_file = "/fans.html"; break;
+    default:  target_file = m_url; break;
     }
 
+    // 4. 路径拼接 (安全检查)
+    // 防止 m_url 被修改后过长导致溢出
+    if (strlen(target_file) + len >= FILENAME_SIZE - 1)
+    {
+        return BAD_REQUEST;
+    }
+    
     strcpy(m_realFile, docRoot.c_str());
     strncat(m_realFile, target_file, FILENAME_SIZE - len - 1);
 
-    if (stat(m_realFile, &m_fileStat) < 0)
-        return NO_RESOURCE;
+    //std::cout << "[DEBUG] Final File Path: " << m_realFile << std::endl;
 
-    // 调用系统函数 stat，把文件的所有信息读到 m_file_stat 结构体里
-
-    if (!(m_fileStat.st_mode & S_IROTH))
-        return FORBIDDEN_REQUEST;
-    // 如果没有读权限，返回 FORBIDDEN_REQUEST
-
-    if (S_ISDIR(m_fileStat.st_mode))
-        return BAD_REQUEST;
-    // 如果是目录，返回 BAD_REQUEST
+    // 5. 文件映射
+    if (stat(m_realFile, &m_fileStat) < 0) {return NO_RESOURCE;}
+    if (!(m_fileStat.st_mode & S_IROTH)) return FORBIDDEN_REQUEST;
+    if (S_ISDIR(m_fileStat.st_mode)) return BAD_REQUEST;
 
     int fd = open(m_realFile, O_RDONLY);
     m_fileAddress = (char *)mmap(0, m_fileStat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    // 调用系统函数 mmap，将目标文件映射到内存中
     close(fd);
+    
     return FILE_REQUEST;
 }
 
@@ -559,9 +561,19 @@ bool httpConn::write()
         return true;
     }
 
+    //std::cout << "----------- RESPONSE HEADERS -----------" << std::endl;
+    //std::cout << m_writeBuf << std::endl;
+    //std::cout << "----------------------------------------" << std::endl;
+
     while (true)
     {
         temp = writev(m_sockfd, m_iv, m_ivCount);
+        /*
+        if (temp < 0) {
+            std::cout << "[DEBUG] writev failed! errno=" << errno << std::endl;
+        } else {
+            std::cout << "[DEBUG] writev sent " << temp << " bytes. Remaining: " << (bytes_to_send - temp) << std::endl;
+        }*/
         // m_iv   [0] HTTP头部的地址和长度  [1]文件内容的地址和长度
         // int iovcnt  发几块  头 + 文件
         // 返回实际写入的字节数
@@ -574,16 +586,16 @@ bool httpConn::write()
                     modfd(m_epollfd, m_sockfd, EPOLLOUT, m_trigMode);
                     return true;
                 }
-                unmap();
-                return false;
             }
+            unmap();
+            return false;
             // 资源暂不可用，返回 true，继续发送  其他就退出
         }
 
         bytes_have_send += temp;
         bytes_to_send -= temp;
 
-        if (bytes_have_send >= m_iv[0].iov_len)
+        if (bytes_have_send >= m_writeIdx)
         {
             m_iv[0].iov_len = 0;
             m_iv[1].iov_base = m_fileAddress + (bytes_have_send - m_writeIdx);
@@ -593,7 +605,7 @@ bool httpConn::write()
         else
         {
             m_iv[0].iov_base = m_writeBuf + bytes_have_send;
-            m_iv[0].iov_len = m_iv[0].iov_len - bytes_have_send;
+            m_iv[0].iov_len = m_writeIdx - bytes_have_send;
         }
 
         if (bytes_to_send <= 0)
@@ -675,6 +687,7 @@ bool httpConn::add_content(const char *content)
 
 bool httpConn::process_write(HTTP_CODE ret)
 {
+    m_writeIdx = 0;
     switch (ret)
     {
     case INTERNAL_ERROR:
@@ -722,6 +735,13 @@ bool httpConn::process_write(HTTP_CODE ret)
             if (!add_content(ok_string))
                 return false;
         }
+    }
+    case NO_RESOURCE:{
+        add_status_line(404, error_404_title);
+        add_headers(strlen(error_404_form));
+        if (!add_content(error_404_form))
+            return false;
+        break;
     }
     default:
         return false;
